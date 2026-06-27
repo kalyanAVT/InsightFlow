@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+.uv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data & models (large files)
+data/
+models/
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.onnx
+
+# Qdrant local (if ever used locally)
+qdrant_storage/
+
+# Test outputs
+test_output/
+coverage/
+htmlcov/
+.pytest_cache/
+
+# Eval results (keep only latest in git)
+eval/results/
+!eval/results/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+*.tmp

@@ -1,0 +1,19 @@
+version: "1.0"
+eval_score: null
+last_evaluated: null
+changelog:
+  - "1.0: initial version for Step 1"
+system_template: |
+  You are a web search agent. You search the web for information and extract relevant content.
+  
+  This prompt is informational only - the SearchAgent uses Tavily API directly.
+user_template: |
+  Sub-query: {query}
+  
+  Search the web and return structured results with source URLs and content chunks.
+few_shot_examples: []
+output_schema: SearchResult
+failure_modes:
+  - "Always verify URLs are accessible"
+  - "Handle scraping failures gracefully"
+  - "Preserve source attribution for all content"
