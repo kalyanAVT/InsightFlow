@@ -14,7 +14,6 @@ class SearchAgent:
         self.tavily = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
     
     def run(self, query: str) -> SearchResult:
-        # 1. Search Tavily
         search_response = self.tavily.search(
             query=query,
             search_depth="basic",
@@ -23,11 +22,9 @@ class SearchAgent:
         )
         
         results = search_response.get("results", [])
-        
         all_chunks: List[Chunk] = []
         sources: List[str] = []
         
-        # 2. Scrape each result and chunk
         for result in results:
             url = result.get("url")
             title = result.get("title", "Untitled")
@@ -36,14 +33,10 @@ class SearchAgent:
                 continue
             
             sources.append(url)
-            
-            # Try to fetch full page content
             content = self._fetch_page(url)
             if not content:
-                # Fallback to Tavily's snippet if scraping fails
                 content = result.get("content", "")
             
-            # 3. Chunk the content
             chunks = chunk_text(
                 text=content,
                 source_url=url,
@@ -58,24 +51,18 @@ class SearchAgent:
         )
     
     def _fetch_page(self, url: str) -> str:
-        """Fetch and extract clean text from a URL."""
         try:
             headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.0"
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }
             response = requests.get(url, headers=headers, timeout=15)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, "html.parser")
-            
-            # Remove script and style elements
-            for script in soup(["script", "style", "nav", "header", "footer"]):
+            for script in soup(["script", "style", "nav", "header", "footer", "aside"]):
                 script.decompose()
             
-            # Get text
             text = soup.get_text(separator="\n", strip=True)
-            
-            # Clean up whitespace
             lines = [line.strip() for line in text.splitlines() if line.strip()]
             return "\n".join(lines)
             

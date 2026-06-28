@@ -1,10 +1,14 @@
 import time
 from datetime import datetime
 from typing import Any
-from graph.state import AgentState, AgentError
+from graph.state import AgentState, AgentError, ResearchPlan
 from agents.planner import PlannerAgent
 from agents.searcher import SearchAgent
+from agents.memory_rag import MemoryRAGAgent
 from agents.synthesizer import SynthesizerAgent
+from agents.critic import CriticAgent
+from agents.writer import WriterAgent
+from retrieval.citation_enforcement import CitationEnforcement
 
 
 def planner_node(state: AgentState) -> dict[str, Any]:
@@ -12,7 +16,8 @@ def planner_node(state: AgentState) -> dict[str, Any]:
     start_time = time.time()
     try:
         agent = PlannerAgent()
-        plan = agent.run(state.research_question)
+        gap = state.critique.gap_analysis if state.critique else ""
+        plan = agent.run(state.research_question, gap_analysis=gap)
         
         return {
             "plan": plan,
@@ -29,7 +34,7 @@ def planner_node(state: AgentState) -> dict[str, Any]:
             "errors": [
                 *state.errors,
                 AgentError(
-                    error_type="LLM_TIMEOUT" if "timeout" in str(e).lower() else "VALIDATION_ERROR",
+                    error_type="VALIDATION_ERROR",
                     node="planner",
                     message=str(e)
                 )
@@ -38,32 +43,24 @@ def planner_node(state: AgentState) -> dict[str, Any]:
 
 
 def search_node(state: AgentState) -> dict[str, Any]:
-    """Execute a single Search Agent (Step 1: uses first sub-query only)."""
+    """
+    Execute a single Search Agent.
+    Called via Send() with sub-query passed as research_question.
+    """
     start_time = time.time()
     
-    if not state.plan or not state.plan.sub_queries:
-        return {
-            "errors": [
-                *state.errors,
-                AgentError(
-                    error_type="VALIDATION_ERROR",
-                    node="searcher",
-                    message="No plan or sub-queries available"
-                )
-            ]
-        }
-    
-    sub_query = state.plan.sub_queries[0]
+    # The sub-query is passed in research_question via Send()
+    query = state.research_question
     
     try:
         agent = SearchAgent()
-        result = agent.run(sub_query.query)
+        result = agent.run(query)
         
         return {
-            "search_results": [result],
+            "search_results": [result],  # List so reducer merges properly
             "timestamps": {
                 **state.timestamps,
-                "searcher": {
+                f"searcher_{query[:20]}": {
                     "start": datetime.utcfromtimestamp(start_time).isoformat(),
                     "end": datetime.utcnow().isoformat()
                 }
@@ -74,7 +71,7 @@ def search_node(state: AgentState) -> dict[str, Any]:
             "errors": [
                 *state.errors,
                 AgentError(
-                    error_type="TOOL_FAILURE" if "api" in str(e).lower() else "UNEXPECTED",
+                    error_type="TOOL_FAILURE",
                     node="searcher",
                     message=str(e)
                 )
@@ -82,13 +79,56 @@ def search_node(state: AgentState) -> dict[str, Any]:
         }
 
 
+def memory_rag_node(state: AgentState) -> dict[str, Any]:
+    """Execute Memory RAG Agent."""
+    start_time = time.time()
+    
+    sub_queries = [sq.query for sq in state.plan.sub_queries] if state.plan else []
+    
+    try:
+        agent = MemoryRAGAgent()
+        chunks = agent.run(
+            query=state.research_question,
+            sub_queries=sub_queries
+        )
+        
+        return {
+            "rag_chunks": chunks,  # List so reducer merges properly
+            "timestamps": {
+                **state.timestamps,
+                "memory_rag": {
+                    "start": datetime.utcfromtimestamp(start_time).isoformat(),
+                    "end": datetime.utcnow().isoformat()
+                }
+            }
+        }
+    except Exception as e:
+        return {
+            "errors": [
+                *state.errors,
+                AgentError(
+                    error_type="RETRIEVAL_FAILURE",
+                    node="memory_rag",
+                    message=str(e)
+                )
+            ]
+        }
+
+
+def merge_search_results(state: AgentState) -> dict[str, Any]:
+    """Merge parallel search results. No-op since reducer handles merging."""
+    return {}
+
+
 def synthesizer_node(state: AgentState) -> dict[str, Any]:
     """Execute the Synthesizer Agent."""
     start_time = time.time()
     
+    # Combine web search chunks + RAG chunks
     all_chunks = []
     for result in state.search_results:
         all_chunks.extend(result.chunks)
+    all_chunks.extend(state.rag_chunks)
     
     try:
         agent = SynthesizerAgent()
@@ -112,7 +152,7 @@ def synthesizer_node(state: AgentState) -> dict[str, Any]:
             "errors": [
                 *state.errors,
                 AgentError(
-                    error_type="LLM_TIMEOUT" if "timeout" in str(e).lower() else "UNEXPECTED",
+                    error_type="UNEXPECTED",
                     node="synthesizer",
                     message=str(e)
                 )
@@ -120,32 +160,118 @@ def synthesizer_node(state: AgentState) -> dict[str, Any]:
         }
 
 
-def writer_node(state: AgentState) -> dict[str, Any]:
-    """Simple writer for Step 1. Formats synthesis into Markdown."""
-    if not state.synthesis:
-        return {"final_report": "# Error\nNo synthesis available."}
+def citation_enforcement_node(state: AgentState) -> dict[str, Any]:
+    """Check that all claims are supported by evidence."""
+    if not state.synthesis or not state.synthesis.key_findings:
+        return {
+            "declined": True,
+            "decline_reason": "No findings produced by synthesizer"
+        }
     
-    lines = [
-        f"# Research: {state.research_question}",
-        "",
-        "## Key Findings",
-        ""
-    ]
-    
-    for i, finding in enumerate(state.synthesis.key_findings, 1):
-        lines.append(f"### Finding {i}: {finding.claim}")
-        lines.append(f"- Confidence: {finding.confidence:.2f}")
-        if finding.supporting_chunks:
-            lines.append(f"- Supported by {len(finding.supporting_chunks)} chunks")
-        lines.append("")
-    
-    lines.extend(["## Sources", ""])
-    
-    seen_urls = set()
+    # Collect all chunks
+    all_chunks = []
     for result in state.search_results:
-        for chunk in result.chunks:
-            if chunk.metadata.source_url not in seen_urls:
-                seen_urls.add(chunk.metadata.source_url)
-                lines.append(f"- [{chunk.metadata.source_title or 'Source'}]({chunk.metadata.source_url})")
+        all_chunks.extend(result.chunks)
+    all_chunks.extend(state.rag_chunks)
     
-    return {"final_report": "\n".join(lines)}
+    enforcer = CitationEnforcement()
+    passed, reason = enforcer.check(state.synthesis.key_findings, all_chunks)
+    
+    if not passed:
+        return {
+            "declined": True,
+            "decline_reason": reason
+        }
+    
+    return {}
+
+
+def critic_node(state: AgentState) -> dict[str, Any]:
+    """Execute the Critic Agent."""
+    start_time = time.time()
+    
+    if not state.synthesis or not state.plan:
+        return {
+            "critique": None,
+            "errors": [
+                *state.errors,
+                AgentError(
+                    error_type="VALIDATION_ERROR",
+                    node="critic",
+                    message="Missing synthesis or plan"
+                )
+            ]
+        }
+    
+    try:
+        agent = CriticAgent()
+        critique = agent.run(
+            synthesis=state.synthesis,
+            plan=state.plan,
+            retry_count=state.retry_count
+        )
+        
+        return {
+            "critique": critique,
+            "timestamps": {
+                **state.timestamps,
+                "critic": {
+                    "start": datetime.utcfromtimestamp(start_time).isoformat(),
+                    "end": datetime.utcnow().isoformat()
+                }
+            }
+        }
+    except Exception as e:
+        from graph.state import CritiqueResult
+        return {
+            "critique": CritiqueResult(
+                quality_score=0.6,
+                proceed=True,
+                gap_analysis=f"Critic failed: {str(e)}"
+            ),
+            "errors": [
+                *state.errors,
+                AgentError(
+                    error_type="UNEXPECTED",
+                    node="critic",
+                    message=str(e)
+                )
+            ]
+        }
+
+
+def writer_node(state: AgentState) -> dict[str, Any]:
+    """Execute the Writer Agent."""
+    try:
+        agent = WriterAgent()
+        report = agent.run(state)
+        
+        return {
+            "final_report": report,
+            "timestamps": {
+                **state.timestamps,
+                "writer": {
+                    "start": datetime.utcnow().isoformat(),
+                    "end": datetime.utcnow().isoformat()
+                }
+            }
+        }
+    except Exception as e:
+        return {
+            "final_report": f"# Error\nReport generation failed: {str(e)}",
+            "errors": [
+                *state.errors,
+                AgentError(
+                    error_type="UNEXPECTED",
+                    node="writer",
+                    message=str(e)
+                )
+            ]
+        }
+
+
+def graceful_degrade_node(state: AgentState) -> dict[str, Any]:
+    """Writer with quality warning after max retries."""
+    result = writer_node(state)
+    result["quality_warning"] = True
+    return result

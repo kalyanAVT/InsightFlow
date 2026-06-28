@@ -1,5 +1,7 @@
 import os
+import numpy as np
 from typing import List
+from sentence_transformers import SentenceTransformer
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -28,6 +30,31 @@ class SynthesizerAgent:
             )
         
         self.parser = PydanticOutputParser(pydantic_object=SynthesisResult)
+        self.embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+    
+    def _deduplicate_chunks(self, chunks: List[Chunk], threshold: float = 0.92) -> List[Chunk]:
+        """Remove near-duplicate chunks based on cosine similarity."""
+        if not chunks:
+            return []
+        
+        texts = [c.text for c in chunks]
+        embeddings = self.embedder.encode(texts)
+        
+        unique_chunks = [chunks[0]]
+        unique_embeddings = [embeddings[0]]
+        
+        for i in range(1, len(chunks)):
+            # Compare to all kept chunks
+            similarities = [
+                np.dot(embeddings[i], emb) / (np.linalg.norm(embeddings[i]) * np.linalg.norm(emb))
+                for emb in unique_embeddings
+            ]
+            
+            if max(similarities) < threshold:
+                unique_chunks.append(chunks[i])
+                unique_embeddings.append(embeddings[i])
+        
+        return unique_chunks
     
     def run(self, research_question: str, chunks: List[Chunk]) -> SynthesisResult:
         if not chunks:
@@ -37,28 +64,21 @@ class SynthesizerAgent:
                 source_diversity_score=0.0
             )
         
-        # Prepare context: chunk texts with IDs
+        # Deduplicate
+        chunks = self._deduplicate_chunks(chunks)
+        
+        # Prepare context
         context_parts = []
-        for chunk in chunks[:20]:  # Limit context to top 20 chunks
+        for chunk in chunks[:20]:
             context_parts.append(
-                f"[CHUNK_ID: {chunk.chunk_id}]\n{chunk.text[:500]}...\n"
+                f"[CHUNK_ID: {chunk.chunk_id}]\nSource: {chunk.metadata.source_url}\n{chunk.text[:600]}...\n"
             )
         
         context = "\n".join(context_parts)
         
         prompt = ChatPromptTemplate.from_template("""You are a research synthesis agent.
 
-Given a research question and a set of text chunks from web sources, produce structured findings.
-
-For each finding:
-1. Write a clear, specific claim
-2. List which CHUNK_IDs support this claim
-3. Assign a confidence score (0.0 to 1.0) based on source agreement
-4. Note any contradictions found
-
-Also produce:
-- overall_confidence: weighted average across findings
-- source_diversity_score: how spread out the sources are (0.0 to 1.0, penalize single-source reliance)
+Given a research question and text chunks from sources, produce structured findings.
 
 {format_instructions}
 
@@ -66,6 +86,14 @@ Research Question: {question}
 
 Retrieved Chunks:
 {context}
+
+Rules:
+- Each finding must be a single, specific, verifiable claim
+- Link each claim to CHUNK_IDs that support it
+- Confidence: 0.0-1.0 based on source agreement (multiple sources = higher)
+- Note contradictions explicitly
+- overall_confidence: weighted average
+- source_diversity_score: 0.0-1.0, penalize single-source reliance
 
 Respond with ONLY the JSON. No extra text.""")
         
@@ -79,11 +107,9 @@ Respond with ONLY the JSON. No extra text.""")
             })
             return result
         except Exception as e:
-            # Fallback: create simple findings from chunks
             return self._fallback_synthesis(chunks)
     
     def _fallback_synthesis(self, chunks: List[Chunk]) -> SynthesisResult:
-        """Create basic findings if LLM parsing fails."""
         findings = []
         for chunk in chunks[:5]:
             findings.append(Finding(

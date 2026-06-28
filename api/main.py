@@ -10,7 +10,7 @@ load_dotenv()
 
 def create_app() -> FastAPI:
     app = FastAPI(
-        title="InsightFlow",
+        title="InSyfy",
         description="Autonomous Research & Competitive Intelligence Agent",
         version="0.1.0-step1"
     )
@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
     
     @app.on_event("startup")
     async def startup():
-        print("InsightFlow Step 1 starting up...")
+        print("InSyfy Step 1 starting up...")
         print(f"LLM Provider: {os.getenv('LLM_PROVIDER', 'groq')}")
         print(f"Qdrant URL: {os.getenv('QDRANT_URL', 'not set')}")
     
