@@ -1,5 +1,8 @@
 import os
 from typing import List
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -12,7 +15,7 @@ class PlannerAgent:
     
     def __init__(self):
         provider = os.getenv("LLM_PROVIDER", "groq")
-        model = os.getenv("LLM_MODEL", "mixtral-8x7b-32768")
+        model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
         
         if provider == "groq":
             self.llm = ChatGroq(

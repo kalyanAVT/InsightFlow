@@ -1,6 +1,10 @@
 import os
 from typing import List
-from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from sentence_transformers import SentenceTransformer, CrossEncoder
 from retrieval.qdrant_store import qdrant_store
 from graph.state import Chunk, ChunkMetadata
 
@@ -15,16 +19,7 @@ class MemoryRAGAgent:
     
     def __init__(self):
         self.embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-        
-        # Lazy load cross-encoder
-        self._reranker = None
-    
-    @property
-    def reranker(self):
-        if self._reranker is None:
-            from sentence_transformers import CrossEncoder
-            self._reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-        return self._reranker
+        self.reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
     
     def run(self, query: str, sub_queries: List[str] = None) -> List[Chunk]:
         """
@@ -55,18 +50,18 @@ class MemoryRAGAgent:
                      "if", "because", "although", "though", "while", "where",
                      "when", "that", "which", "who", "whom", "whose", "what",
                      "whatever", "whoever", "whomever", "whichever", "this",
-                     "these", "those", "such", "what", "whatever", "it", "its"}
+                     "these", "those", "such", "it", "its"}
         keywords = {k for k in keywords if k not in stop_words and len(k) > 2}
         
         scored_results = []
         for result in vector_results:
-            payload = result.payload
+            payload = result.get("payload", {})
             text = payload.get("text", "").lower()
             
             keyword_hits = sum(1 for kw in keywords if kw in text)
             keyword_score = keyword_hits / max(len(keywords), 1)
             
-            combined_score = (0.7 * result.score) + (0.3 * keyword_score)
+            combined_score = (0.7 * result.get("score", 0)) + (0.3 * keyword_score)
             
             scored_results.append({
                 "result": result,
@@ -94,7 +89,7 @@ class MemoryRAGAgent:
         for item in top_final:
             meta = item["metadata"]
             chunks.append(Chunk(
-                chunk_id=item["result"].id,
+                chunk_id=item["result"].get("id", "unknown"),
                 text=item["text"],
                 metadata=ChunkMetadata(
                     source_url=meta.get("source_url", ""),

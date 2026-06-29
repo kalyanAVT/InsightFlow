@@ -1,5 +1,9 @@
 import os
 from typing import List, Optional
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
@@ -15,7 +19,11 @@ class QdrantStore:
         self.api_key = os.getenv("QDRANT_API_KEY")
         
         if not self.url or not self.api_key:
-            raise ValueError("QDRANT_URL and QDRANT_API_KEY must be set in .env")
+            raise ValueError(
+                "QDRANT_URL and QDRANT_API_KEY must be set in .env.\n"
+                f"QDRANT_URL: {'set' if self.url else 'MISSING'}\n"
+                f"QDRANT_API_KEY: {'set' if self.api_key else 'MISSING'}"
+            )
         
         self.client = QdrantClient(
             url=self.url,
@@ -23,32 +31,36 @@ class QdrantStore:
             timeout=30
         )
         
-        self.collection_name = "research_chunks"
+        # Use a new collection name to avoid dimension conflicts
+        self.collection_name = "insyfy_research_chunks"
         self.vector_size = 384  # all-MiniLM-L6-v2 dimensions
+        
+        # Auto-create collection on init
+        self.ensure_collection()
     
     def ensure_collection(self):
         """Create collection if it doesn't exist."""
-        collections = self.client.get_collections().collections
-        collection_names = [c.name for c in collections]
-        
-        if self.collection_name not in collection_names:
-            self.client.create_collection(
-                collection_name=self.collection_name,
-                vectors_config=VectorParams(
-                    size=self.vector_size,
-                    distance=Distance.COSINE
+        try:
+            collections = self.client.get_collections().collections
+            collection_names = [c.name for c in collections]
+            
+            if self.collection_name not in collection_names:
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(
+                        size=self.vector_size,
+                        distance=Distance.COSINE
+                    )
                 )
-            )
-            print(f"Created collection: {self.collection_name}")
-        else:
-            print(f"Collection {self.collection_name} already exists")
+                print(f"Created collection: {self.collection_name} (dim={self.vector_size})")
+            else:
+                print(f"Collection {self.collection_name} already exists")
+                
+        except Exception as e:
+            print(f"Error ensuring collection: {e}")
     
     def store_chunks(self, chunks: List, embeddings: List[List[float]], run_id: str):
-        """
-        Store chunks with embeddings.
-        chunks: list of Chunk objects
-        embeddings: list of embedding vectors
-        """
+        """Store chunks with embeddings."""
         self.ensure_collection()
         
         points = []
@@ -74,30 +86,87 @@ class QdrantStore:
             )
     
     def search(self, query_embedding: List[float], limit: int = 8) -> List[dict]:
-        """Search for similar chunks."""
+        """
+        Search for similar chunks. Tries multiple API versions.
+        """
+        self.ensure_collection()
+        
+        # Try modern API first (qdrant-client >= 1.7)
         try:
             results = self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_embedding,
-                limit=limit
+                limit=limit,
+                with_payload=True,
+                with_vectors=False
             )
-            return results
+            
+            return [
+                {
+                    "id": point.id,
+                    "score": point.score,
+                    "payload": point.payload or {},
+                }
+                for point in results
+            ]
+            
+        except AttributeError as e:
+            if "search" in str(e):
+                print("Falling back to query_points API...")
+                try:
+                    # Try query_points (newer API)
+                    results = self.client.query_points(
+                        collection_name=self.collection_name,
+                        query=query_embedding,
+                        limit=limit,
+                        with_payload=True
+                    )
+                    
+                    return [
+                        {
+                            "id": point.id,
+                            "score": point.score,
+                            "payload": point.payload or {},
+                        }
+                        for point in results.points
+                    ]
+                    
+                except Exception as e2:
+                    print(f"query_points also failed: {e2}")
+                    return []
+            else:
+                raise
+        
         except Exception as e:
             print(f"Qdrant search error: {e}")
             return []
     
     def get_collection_info(self) -> dict:
-        """Get info about the collection."""
+        """Get collection info. Returns empty if collection doesn't exist."""
         try:
+            # First check if collection exists
+            collections = self.client.get_collections().collections
+            collection_names = [c.name for c in collections]
+            
+            if self.collection_name not in collection_names:
+                return {
+                    "name": self.collection_name,
+                    "exists": False,
+                    "points_count": 0,
+                    "status": "not_created"
+                }
+            
             info = self.client.get_collection(self.collection_name)
             return {
-                "name": info.config.params.vectors.size,
+                "name": self.collection_name,
+                "exists": True,
+                "vector_size": info.config.params.vectors.size,
                 "points_count": info.points_count,
-                "status": info.status
+                "status": str(info.status)
             }
         except Exception as e:
-            return {"error": str(e)}
+            return {"error": str(e), "exists": False}
 
 
-# Singleton instance
+# Singleton
 qdrant_store = QdrantStore()

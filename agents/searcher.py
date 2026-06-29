@@ -1,6 +1,10 @@
 import os
 import requests
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from bs4 import BeautifulSoup
 from tavily import TavilyClient
 from graph.state import SearchResult, Chunk, ChunkMetadata
@@ -42,7 +46,8 @@ class SearchAgent:
                 source_url=url,
                 source_title=title
             )
-            all_chunks.extend(chunks)
+            # LIMIT: max 8 chunks per source to prevent explosion
+            all_chunks.extend(chunks[:8])
         
         return SearchResult(
             sub_query=query,

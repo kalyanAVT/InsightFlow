@@ -1,7 +1,7 @@
 import time
 from datetime import datetime
 from typing import Any
-from graph.state import AgentState, AgentError, ResearchPlan
+from graph.state import AgentState, AgentError, CritiqueResult
 from agents.planner import PlannerAgent
 from agents.searcher import SearchAgent
 from agents.memory_rag import MemoryRAGAgent
@@ -14,12 +14,20 @@ from retrieval.citation_enforcement import CitationEnforcement
 def planner_node(state: AgentState) -> dict[str, Any]:
     """Execute the Planner Agent."""
     start_time = time.time()
+    
+    result = {}
+    
+    # If this is a retry, clear old search results to prevent accumulation
+    if state.retry_count > 0:
+        print(f"PLANNER: Retry {state.retry_count}/2 — clearing old search results")
+        result["search_results"] = []  # Will be merged (replaced effectively since we send new list)
+    
     try:
         agent = PlannerAgent()
         gap = state.critique.gap_analysis if state.critique else ""
         plan = agent.run(state.research_question, gap_analysis=gap)
         
-        return {
+        result.update({
             "plan": plan,
             "timestamps": {
                 **state.timestamps,
@@ -28,9 +36,12 @@ def planner_node(state: AgentState) -> dict[str, Any]:
                     "end": datetime.utcnow().isoformat()
                 }
             }
-        }
+        })
+        return result
+        
     except Exception as e:
         return {
+            "plan": None,
             "errors": [
                 *state.errors,
                 AgentError(
@@ -49,7 +60,6 @@ def search_node(state: AgentState) -> dict[str, Any]:
     """
     start_time = time.time()
     
-    # The sub-query is passed in research_question via Send()
     query = state.research_question
     
     try:
@@ -57,7 +67,7 @@ def search_node(state: AgentState) -> dict[str, Any]:
         result = agent.run(query)
         
         return {
-            "search_results": [result],  # List so reducer merges properly
+            "search_results": [result],
             "timestamps": {
                 **state.timestamps,
                 f"searcher_{query[:20]}": {
@@ -93,7 +103,7 @@ def memory_rag_node(state: AgentState) -> dict[str, Any]:
         )
         
         return {
-            "rag_chunks": chunks,  # List so reducer merges properly
+            "rag_chunks": chunks,
             "timestamps": {
                 **state.timestamps,
                 "memory_rag": {
@@ -124,7 +134,6 @@ def synthesizer_node(state: AgentState) -> dict[str, Any]:
     """Execute the Synthesizer Agent."""
     start_time = time.time()
     
-    # Combine web search chunks + RAG chunks
     all_chunks = []
     for result in state.search_results:
         all_chunks.extend(result.chunks)
@@ -168,7 +177,6 @@ def citation_enforcement_node(state: AgentState) -> dict[str, Any]:
             "decline_reason": "No findings produced by synthesizer"
         }
     
-    # Collect all chunks
     all_chunks = []
     for result in state.search_results:
         all_chunks.extend(result.chunks)
@@ -211,7 +219,8 @@ def critic_node(state: AgentState) -> dict[str, Any]:
             retry_count=state.retry_count
         )
         
-        return {
+        # Increment retry count if not proceeding and under limit
+        result = {
             "critique": critique,
             "timestamps": {
                 **state.timestamps,
@@ -221,13 +230,22 @@ def critic_node(state: AgentState) -> dict[str, Any]:
                 }
             }
         }
+        
+        threshold = state.plan.quality_threshold if state.plan else 0.75
+        
+        # If critic says don't proceed and we haven't maxed retries, increment
+        if not critique.proceed and state.retry_count < 2:
+            result["retry_count"] = state.retry_count + 1
+            print(f"CRITIC: Retry {result['retry_count']}/2 triggered")
+        
+        return result
+        
     except Exception as e:
-        from graph.state import CritiqueResult
         return {
             "critique": CritiqueResult(
                 quality_score=0.6,
                 proceed=True,
-                gap_analysis=f"Critic failed: {str(e)}"
+                gap_analysis=f"Critic failed: {str(e)}. Proceeding with caution."
             ),
             "errors": [
                 *state.errors,

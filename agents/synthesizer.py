@@ -1,6 +1,10 @@
 import os
 import numpy as np
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from sentence_transformers import SentenceTransformer
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
@@ -14,7 +18,7 @@ class SynthesizerAgent:
     
     def __init__(self):
         provider = os.getenv("LLM_PROVIDER", "groq")
-        model = os.getenv("LLM_MODEL", "mixtral-8x7b-32768")
+        model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
         
         if provider == "groq":
             self.llm = ChatGroq(
@@ -44,7 +48,6 @@ class SynthesizerAgent:
         unique_embeddings = [embeddings[0]]
         
         for i in range(1, len(chunks)):
-            # Compare to all kept chunks
             similarities = [
                 np.dot(embeddings[i], emb) / (np.linalg.norm(embeddings[i]) * np.linalg.norm(emb))
                 for emb in unique_embeddings
@@ -64,14 +67,13 @@ class SynthesizerAgent:
                 source_diversity_score=0.0
             )
         
-        # Deduplicate
         chunks = self._deduplicate_chunks(chunks)
         
-        # Prepare context
+        # LIMIT: max 15 chunks for context to avoid token overflow
         context_parts = []
-        for chunk in chunks[:20]:
+        for chunk in chunks[:15]:
             context_parts.append(
-                f"[CHUNK_ID: {chunk.chunk_id}]\nSource: {chunk.metadata.source_url}\n{chunk.text[:600]}...\n"
+                f"[CHUNK_ID: {chunk.chunk_id}]\nSource: {chunk.metadata.source_url}\n{chunk.text[:500]}...\n"
             )
         
         context = "\n".join(context_parts)
@@ -110,6 +112,7 @@ Respond with ONLY the JSON. No extra text.""")
             return self._fallback_synthesis(chunks)
     
     def _fallback_synthesis(self, chunks: List[Chunk]) -> SynthesisResult:
+        """Create basic findings if LLM parsing fails."""
         findings = []
         for chunk in chunks[:5]:
             findings.append(Finding(

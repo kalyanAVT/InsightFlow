@@ -1,7 +1,11 @@
 import os
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from typing import List
+from dotenv import load_dotenv
+
+load_dotenv()
+
+from sentence_transformers import SentenceTransformer
 from graph.state import Chunk, Finding
 
 
@@ -29,7 +33,6 @@ class CitationEnforcement:
         for finding in findings:
             claim_embedding = self.embedder.encode([finding.claim])[0]
             
-            # Compute similarities to all chunks
             similarities = [
                 np.dot(claim_embedding, ce) / (np.linalg.norm(claim_embedding) * np.linalg.norm(ce))
                 for ce in chunk_embeddings

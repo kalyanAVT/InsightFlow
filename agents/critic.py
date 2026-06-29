@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_groq import ChatGroq
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
@@ -11,7 +14,7 @@ class CriticAgent:
     
     def __init__(self):
         provider = os.getenv("LLM_PROVIDER", "groq")
-        model = os.getenv("LLM_MODEL", "mixtral-8x7b-32768")
+        model = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
         
         if provider == "groq":
             self.llm = ChatGroq(
@@ -84,7 +87,6 @@ Respond with ONLY the JSON. No extra text.""")
             })
             return result
         except Exception as e:
-            # Fallback: auto-pass if LLM fails, but with warning
             return CritiqueResult(
                 quality_score=0.6,
                 coverage_score=0.6,

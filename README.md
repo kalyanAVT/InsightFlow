@@ -1,26 +1,29 @@
-# 🚀 InSyfy
+# InSyfy
 
-> **Autonomous Research & Competitive Intelligence Agent**
->
-> A multi-agent **LangGraph** pipeline that researches any topic, retrieves knowledge from persistent vector memory, synthesizes evidence with citations, self-critiques report quality, and generates structured research reports.
+Autonomous Research & Competitive Intelligence Agent.
 
----
-
-## ✨ Features
-
-* 🧠 Multi-Agent AI workflow powered by **LangGraph**
-* 🔍 Parallel web research using **Tavily Search API**
-* 📚 Persistent semantic memory with **Qdrant Cloud**
-* 🔄 Hybrid Retrieval (Vector Search + Re-ranking)
-* 📖 Automatic citation generation & evidence validation
-* 🧪 Self-critique with retry loops for quality improvement
-* 📝 Structured Markdown report generation
-* ⚡ FastAPI REST API
-* 🎯 Designed for Competitive Intelligence & Deep Research
+InSyfy is a multi-agent research system built with LangGraph that performs autonomous web research, retrieves relevant knowledge from persistent vector memory, synthesizes evidence with citations, evaluates report quality through self-critique, and generates structured research reports.
 
 ---
 
-# 📌 Workflow
+# Features
+
+* Multi-agent workflow powered by LangGraph
+* Parallel web research using Tavily Search API
+* Persistent semantic memory with Qdrant Cloud
+* Hybrid Retrieval (Vector Search + Re-ranking)
+* Automatic citation generation and evidence validation
+* Self-critique with retry loops for quality improvement
+* Structured Markdown report generation
+* FastAPI REST API
+* Gradio Web Interface
+* Redis state management and caching
+* Server-Sent Events (SSE) for live progress streaming
+* Designed for Competitive Intelligence and Deep Research
+
+---
+
+# Workflow
 
 ```text
                 User Query
@@ -35,80 +38,74 @@
      └───────────────┴───────────────┘
                      │
                      ▼
-             Memory Retrieval (Qdrant)
+          Memory Retrieval (Qdrant)
                      │
                      ▼
-        Hybrid Retrieval + Re-ranking
+     Hybrid Retrieval + Re-ranking
                      │
                      ▼
-              Synthesizer Agent
+           Synthesizer Agent
                      │
                      ▼
-          Citation Verification Layer
+       Citation Verification Layer
                      │
                      ▼
-               Critic / Evaluator
-             (Retry if score is low)
+            Critic / Evaluator
+         (Retry if score is low)
                      │
                      ▼
-               Writer / Reporter
+             Writer / Reporter
                      │
                      ▼
-            Store Report into Memory
+        Store Report into Vector Memory
 ```
 
 ---
 
-# 🏗️ Architecture
+# Architecture
 
 ```text
-                ┌─────────────┐
-                │ User Request│
-                └──────┬──────┘
-                       │
-                 FastAPI Backend
-                       │
-                       ▼
-              LangGraph State Machine
-                       │
-       ┌───────────────┼────────────────┐
-       ▼               ▼                ▼
- Planner Agent    Search Agents     Memory RAG
-       │               │                │
-       └───────────────┴────────────────┘
-                       │
-                       ▼
-             Hybrid Retrieval Engine
-                       │
-             Cross Encoder Re-ranking
-                       │
-                       ▼
-             Synthesizer + Citations
-                       │
-                       ▼
-                 Critic Evaluation
-                  │             ▲
-                  │ Retry Loop  │
-                  ▼             │
-                 Writer─────────┘
-                       │
-                       ▼
-             Markdown Research Report
+User
+ │
+ ▼
+Gradio UI
+ │
+ ▼
+FastAPI
+ │
+ ▼
+LangGraph State Machine
+ │
+ ├── Planner
+ ├── Parallel Search Agents
+ ├── Memory Retrieval (Qdrant)
+ ├── Hybrid Retrieval
+ ├── Synthesizer
+ ├── Critic
+ └── Writer
+ │
+ ▼
+Redis (State Cache)
+ │
+ ▼
+Structured Markdown Report
 ```
 
 ---
 
-# 🤖 Agent Pipeline
+# Agent Pipeline
 
-## 1️⃣ Planner
+## Planner
 
-Breaks the user question into multiple focused research queries.
+Breaks a user question into focused research tasks.
 
 Example:
 
-> "Latest RAG systems"
+```
+Latest RAG systems
+```
 
-↓
+becomes
 
 * Recent RAG architectures
 * Open-source RAG frameworks
@@ -118,22 +115,22 @@ Example:
 
 ---
 
-## 2️⃣ Search Agents
+## Search Agents
 
-Runs multiple searches simultaneously using **Tavily API**.
+Runs multiple searches in parallel using Tavily.
 
 Responsibilities:
 
-* Web search
-* Result filtering
+* Web Search
 * Metadata extraction
+* Result filtering
 * Source ranking
 
 ---
 
-## 3️⃣ Memory RAG
+## Memory Retrieval
 
-Retrieves relevant historical research from **Qdrant Cloud**.
+Retrieves relevant historical research from Qdrant.
 
 Uses:
 
@@ -143,46 +140,46 @@ Uses:
 
 ---
 
-## 4️⃣ Hybrid Retrieval
+## Hybrid Retrieval
 
 Combines
 
 * Vector Search
-* Keyword Matching
+* Keyword Search
 * Cross Encoder Re-ranking
 
-for higher retrieval accuracy.
+to improve retrieval quality.
 
 ---
 
-## 5️⃣ Synthesizer
+## Synthesizer
 
-Combines evidence from
+Combines information from
 
 * Web search
-* Memory
+* Vector memory
 * Previous reports
 
-Removes duplicates and creates chunk-level citations.
+while removing duplicate information and attaching citations.
 
 ---
 
-## 6️⃣ Citation Enforcement
+## Citation Enforcement
 
-Every claim must be backed by evidence.
+Every factual claim must be supported by evidence.
 
-If insufficient evidence exists:
+If evidence is insufficient,
 
-* Report generation is declined
-* Missing citation warning is returned
+* Report generation is rejected
+* Missing citation warnings are returned
 
 ---
 
-## 7️⃣ Critic
+## Critic
 
 Evaluates report quality.
 
-Checks:
+Checks
 
 * Completeness
 * Hallucinations
@@ -190,37 +187,35 @@ Checks:
 * Confidence
 * Readability
 
-Triggers retry loops when necessary.
+Automatically retries low-quality generations.
 
 ---
 
-## 8️⃣ Writer
+## Writer
 
-Generates a polished Markdown report.
-
-Stores final report into vector memory for future retrieval.
+Produces the final Markdown report and stores it into persistent vector memory for future retrieval.
 
 ---
 
-# 🛠 Tech Stack
+# Technology Stack
 
-| Component       | Technology                             |
-| --------------- | -------------------------------------- |
-| Agent Framework | LangGraph                              |
-| LLM             | Groq (Mixtral-8x7B)                    |
-| Fallback LLM    | OpenAI                                 |
-| Search Engine   | Tavily API                             |
-| Vector Database | Qdrant Cloud                           |
-| Embeddings      | sentence-transformers/all-MiniLM-L6-v2 |
-| Re-ranking      | cross-encoder/ms-marco-MiniLM-L-6-v2   |
-| Backend         | FastAPI                                |
-| Frontend        | Gradio *(Planned)*                     |
-| Validation      | Pydantic                               |
-| Async Runtime   | asyncio                                |
+| Component       | Technology            |
+| --------------- | --------------------- |
+| Agent Framework | LangGraph             |
+| LLM             | Groq                  |
+| Search Engine   | Tavily Search         |
+| Vector Database | Qdrant Cloud          |
+| State Store     | Redis                 |
+| Backend         | FastAPI               |
+| Frontend        | Gradio                |
+| Embeddings      | sentence-transformers |
+| Re-ranking      | Cross Encoder         |
+| Validation      | Pydantic              |
+| Async Runtime   | asyncio               |
 
 ---
 
-# 📂 Project Structure
+# Project Structure
 
 ```text
 InSyfy/
@@ -250,11 +245,10 @@ InSyfy/
 │   ├── reranker.py
 │   └── citation.py
 │
+├── ui/
+│   └── app.py
+│
 ├── prompts/
-│   ├── planner.yaml
-│   ├── synthesizer.yaml
-│   ├── critic.yaml
-│   └── writer.yaml
 │
 ├── tests/
 │
@@ -268,7 +262,7 @@ InSyfy/
 
 ---
 
-# ⚙️ Installation
+# Quick Start
 
 ## 1. Clone Repository
 
@@ -285,17 +279,17 @@ cd InSyfy
 ### Windows
 
 ```bash
-python -m venv venv
+python -m venv .venv
 
-venv\Scripts\activate
+.venv\Scripts\activate
 ```
 
 ### Linux / macOS
 
 ```bash
-python3 -m venv venv
+python3 -m venv .venv
 
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
 ---
@@ -308,183 +302,174 @@ pip install -r requirements.txt
 
 ---
 
-# 🔑 Environment Variables
+# Configuration
 
 Create a `.env` file in the project root.
 
 ```env
-##############################
-# Qdrant Cloud
-##############################
+QDRANT_URL=https://your-cluster.qdrant.io
+QDRANT_API_KEY=your_qdrant_api_key
 
-QDRANT_URL=https://your-cluster-url.qdrant.io
-QDRANT_API_KEY=your_qdrant_key
+TAVILY_API_KEY=your_tavily_api_key
 
-##############################
-# Tavily Search
-##############################
+GROQ_API_KEY=your_groq_api_key
 
-TAVILY_API_KEY=your_tavily_key
-
-##############################
-# LLM Providers
-##############################
-
-GROQ_API_KEY=your_groq_key
-
-OPENAI_API_KEY=your_openai_key
-
-##############################
-# Optional Overrides
-##############################
-
-LLM_PROVIDER=groq
-
-LLM_MODEL=openai/gpt-oss-120b
+REDIS_URL=redis://localhost:6379
 ```
 
 ---
 
-# 🧪 Running Tests
+# Redis Setup
 
-## Test Qdrant Connection
+## Option 1 — Redis Cloud
+
+Use the free Redis Cloud service.
+
+```env
+REDIS_URL=redis://username:password@your-host:port
+```
+
+---
+
+## Option 2 — Docker
 
 ```bash
-python test_qdrant.py
+docker run -d -p 6379:6379 --name redis redis:7-alpine
 ```
 
 ---
 
-## Test Complete Pipeline
+## Option 3 — Windows
 
-```bash
-python test_pipeline.py
-```
+Install Redis for Windows or use Redis Cloud if preferred.
 
 ---
 
-# 🚀 Running the API
+# Running the Application
 
-Start the FastAPI server.
+Start the server.
 
 ```bash
 uvicorn api.main:app --reload --port 8000
 ```
 
-Server will be available at
+Open your browser at
 
 ```
 http://localhost:8000
 ```
 
+The FastAPI backend and Gradio interface will both be available.
+
 ---
 
-# 📡 API Usage
+# API Endpoints
 
-## Start Research
+| Method | Endpoint                | Description                 |
+| ------ | ----------------------- | --------------------------- |
+| POST   | /api/v1/research        | Start a research run        |
+| GET    | /api/v1/stream/{run_id} | Stream live events (SSE)    |
+| GET    | /api/v1/status/{run_id} | Check research status       |
+| GET    | /api/v1/report/{run_id} | Retrieve final report       |
+| GET    | /api/v1/history         | View previous research runs |
+| DELETE | /api/v1/report/{run_id} | Delete a report             |
+
+---
+
+# Example Request
 
 ```http
 POST /api/v1/research
 ```
 
-Example request:
-
 ```json
 {
-  "question": "What are the latest advances in RAG systems?"
+  "question": "Latest advances in Retrieval-Augmented Generation"
 }
 ```
 
-Using curl:
+Using curl
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/research \
 -H "Content-Type: application/json" \
--d "{\"question\":\"What are the latest advances in RAG systems?\"}"
+-d "{\"question\":\"Latest advances in Retrieval-Augmented Generation\"}"
 ```
 
 ---
 
-## Fetch Report
+# Development
 
-```http
-GET /api/v1/report/{run_id}
-```
-
-Example:
+Run tests
 
 ```bash
-curl http://localhost:8000/api/v1/report/<run_id>
+python test_pipeline.py
+```
+
+Freeze dependencies
+
+```bash
+pip freeze > requirements.txt
 ```
 
 ---
 
-# 📈 Roadmap
+# Roadmap
 
-### ✅ Step 1
+## Completed
 
-* Project foundation
-* LangGraph pipeline
-* FastAPI backend
-* Qdrant integration
-* Tavily Search
-* Planner
-* Search Agent
-* Synthesizer
+* Step 1: Foundation (Linear Pipeline)
+* Step 2: Full Pipeline
 
-### 🚧 Step 2
+  * Parallel Search
+  * Hybrid Retrieval
+  * Critic Retry Loop
+* Step 3
 
-* Memory RAG
-* Hybrid Retrieval
-* Citation Enforcement
-* Cross Encoder Re-ranking
-* Critic Agent
+  * Gradio UI
+  * SSE Streaming
+  * Redis State Management
 
-### 🚧 Step 3
+## Planned
 
-* Gradio UI
-* Evaluation Dashboard
-* User Authentication
+* Evaluation Framework
+* CI/CD Pipeline
+* Weights & Biases Logging
+* Multi-document Research
+* Scheduled Monitoring
 * Report Export
-* PDF Generation
-
-### 🚧 Step 4
-
-* Multi-document research
-* Scheduled monitoring
-* Competitive intelligence dashboards
-* Team collaboration
-* Enterprise deployment
+* Team Collaboration
+* Enterprise Deployment
 
 ---
 
-# 🤝 Contributing
+# Contributing
 
-Contributions are welcome!
+Contributions are welcome.
 
-1. Fork the repository
-2. Create a feature branch
+1. Fork the repository.
+2. Create a feature branch.
 
 ```bash
 git checkout -b feature/my-feature
 ```
 
-3. Commit your changes
+3. Commit your changes.
 
 ```bash
 git commit -m "Add new feature"
 ```
 
-4. Push
+4. Push the branch.
 
 ```bash
 git push origin feature/my-feature
 ```
 
-5. Open a Pull Request
+5. Open a Pull Request.
 
 ---
 
-# 📜 License
+# License
 
-This project is licensed under the **MIT License**.
+This project is licensed under the MIT License.
